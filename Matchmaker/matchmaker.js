@@ -21,6 +21,7 @@ console.log(`configFile ${configFile}`);
 const config = require('./modules/config.js').init(configFile, defaultConfig);
 console.log("Config: " + JSON.stringify(config, null, '\t'));
 
+const AWS = require('aws-sdk');
 const express = require('express');
 var cors = require('cors');
 const app = express();
@@ -34,8 +35,11 @@ if (config.LogToFile) {
 	logging.RegisterFileLogger('./logs');
 }
 
+const ec2 = new AWS.EC2();
+
 // A list of all the Cirrus server which are connected to the Matchmaker.
 var cirrusServers = new Map();
+var startedInstanceIds = [];
 
 //
 // Parse command line.
@@ -248,6 +252,20 @@ const matchmaker = net.createServer((connection) => {
 			cirrusServer = cirrusServers.get(connection);
 			if(cirrusServer) {
 				cirrusServer.numConnectedClients++;
+				if(cirrusServer.numConnectedClients % 3 === 0) {
+					console.log('Starting a new game server from AMI');
+					ec2.runInstances({
+						ImageId: 'TODO_AMI_ID', 
+						InstanceType: 'g4dn.xlarge',
+						KeyName: 'dutchy-test',
+						MinCount: 1,
+						MaxCount: 1,
+						SecurityGroupIds: [
+							'sg-07c3d21c2f43b2ff5'
+						],
+						SubnetId: 'subnet-0e9f16ce6d25f3e03'
+					}).promise().then(data => startedInstanceIds.push(data.Instances[0].InstanceId)).catch(console.error);
+				}
 				console.log(`Client connected to Cirrus server ${cirrusServer.address}:${cirrusServer.port}`);
 			} else {
 				disconnect(connection);
@@ -257,6 +275,15 @@ const matchmaker = net.createServer((connection) => {
 			cirrusServer = cirrusServers.get(connection);
 			if(cirrusServer) {
 				cirrusServer.numConnectedClients--;
+				if(cirrusServer.numConnectedClients % 3 === 0) {
+					const instanceIdToStop = startedInstanceIds.pop();
+					if(instanceIdToStop) {
+						console.log(`Stopping no more used server ${instanceIdToStop}`);
+						ec2.terminateInstances({
+							InstanceIds: [instanceIdToStop]
+						}).promise().catch(console.error);
+					}
+				}
 				console.log(`Client disconnected from Cirrus server ${cirrusServer.address}:${cirrusServer.port}`);
 				if(cirrusServer.numConnectedClients === 0) {
 					// this make this server immediately available for a new client
