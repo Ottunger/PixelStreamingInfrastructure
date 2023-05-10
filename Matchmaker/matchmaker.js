@@ -35,6 +35,7 @@ if (config.LogToFile) {
 	logging.RegisterFileLogger('./logs');
 }
 
+AWS.config.update({region: 'eu-central-1'});
 const ec2 = new AWS.EC2();
 
 // A list of all the Cirrus server which are connected to the Matchmaker.
@@ -255,7 +256,7 @@ const matchmaker = net.createServer((connection) => {
 				if(cirrusServer.numConnectedClients % 3 === 0) {
 					console.log('Starting a new game server from AMI');
 					ec2.runInstances({
-						ImageId: 'TODO_AMI_ID', 
+						ImageId: 'ami-0eba3d4c38f156ead', 
 						InstanceType: 'g4dn.xlarge',
 						KeyName: 'dutchy-test',
 						MinCount: 1,
